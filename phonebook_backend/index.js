@@ -5,7 +5,7 @@ const morgan = require('morgan')
 const cors = require('cors')
 const Person = require('./models/person')
 
-morgan.token('body', function getRequestBody (req, res) {
+morgan.token('body', function getRequestBody(req, res) {
     return JSON.stringify(req.body);
 })
 
@@ -17,61 +17,87 @@ app.use(morgan(':method :url :status :res[content-length] - :response-time :body
 
 app.use(express.static('build'));
 
-app.get('/info', (request, response) => {
+app.get('/info', (request, response, next) => {
     Person.find({}).then(persons => {
         response.send(`
         <p>Phonebook has info ${persons.length} people</p>
         <p>${new Date()}</p>
         `)
-    });
+    }).catch(error => next(error))
 })
 
-app.get('/api/persons', (request, response) => {
+app.get('/api/persons', (request, response, next) => {
     Person.find({}).then(persons => {
         response.json(persons)
-    });
+    }).catch(error => next(error))
 })
 
-app.get('/api/persons/:id', (request, response) => {
+app.get('/api/persons/:id', (request, response, next) => {
     Person.findById(request.params.id).then(person => {
-        response.json(person)
-    }).catch((e) => {
-        response.status(404).end();
-    });
+        if (person) {
+            response.json(person)
+        } else {
+            response.status(404).end()
+        }
+    }).catch(error => next(error))
 })
 
-app.delete('/api/persons/:id', (request, response) => {
-    Person.deleteOne({_id: request.params.id}).then(() => {
+app.delete('/api/persons/:id', (request, response, next) => {
+    Person.findByIdAndRemove(request.params.id).then(() => {
         response.status(204).end();
-    }).catch((e) => {
-        response.status(404).end();
-    });
+    }).catch(error => next(error))
 })
 
-app.post('/api/persons', async (request, response) => {
-    const person = {...request.body};
-    if (! person.name) {
+app.put('/api/persons/:id', (request, response, next) => {
+    const body = request.body
+
+    const person = {
+        name: body.name,
+        number: body.number,
+    }
+
+    Person.findByIdAndUpdate(request.params.id, person, { new: true })
+    .then(updatedPerson => {
+        response.json(updatedPerson)
+    }).catch(error => next(error))
+})
+
+app.post('/api/persons', async (request, response, next) => {
+    const person = { ...request.body };
+    if (!person.name) {
         response.status(500).json({ error: 'name is required' });
         return;
     }
-    if (! person.number) {
+    if (!person.number) {
         response.status(500).json({ error: 'number is required' });
         return;
     }
-    const lstName = await Person.find({name: person.name});
+    const lstName = await Person.find({ name: person.name });
     if (lstName.length > 0) {
         response.status(500).json({ error: 'name must be unique' });
         return;
     }
-    
+
     const personNew = new Person({
         name: person.name,
         number: person.number
     })
     personNew.save().then((personSaved) => {
-        response.json(personSaved); 
-    });
+        response.json(personSaved);
+    }).catch(error => next(error))
 })
+
+const errorHandler = (error, request, response, next) => {
+    if (error.name === 'CastError') {
+        return response.status(400).send({ error: 'malformatted id' })
+    }
+
+    next(error)
+
+}
+
+// this has to be the last loaded middleware.
+app.use(errorHandler)
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
