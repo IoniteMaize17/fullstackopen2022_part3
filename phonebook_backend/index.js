@@ -56,27 +56,14 @@ app.put('/api/persons/:id', (request, response, next) => {
         number: body.number,
     }
 
-    Person.findByIdAndUpdate(request.params.id, person, { new: true })
+    Person.findByIdAndUpdate(request.params.id, person, { new: true, runValidators: true, context: 'query' })
     .then(updatedPerson => {
         response.json(updatedPerson)
     }).catch(error => next(error))
 })
 
-app.post('/api/persons', async (request, response, next) => {
+app.post('/api/persons', (request, response, next) => {
     const person = { ...request.body };
-    if (!person.name) {
-        response.status(500).json({ error: 'name is required' });
-        return;
-    }
-    if (!person.number) {
-        response.status(500).json({ error: 'number is required' });
-        return;
-    }
-    const lstName = await Person.find({ name: person.name });
-    if (lstName.length > 0) {
-        response.status(500).json({ error: 'name must be unique' });
-        return;
-    }
 
     const personNew = new Person({
         name: person.name,
@@ -90,6 +77,10 @@ app.post('/api/persons', async (request, response, next) => {
 const errorHandler = (error, request, response, next) => {
     if (error.name === 'CastError') {
         return response.status(400).send({ error: 'malformatted id' })
+    } else if (error.name === 'ValidationError') {
+        return response.status(400).json({ error: error.message })
+    } else if (error.message.includes('duplicate key error collection')) {
+        return response.status(400).json({ error: 'name must be unique' });
     }
 
     next(error)
